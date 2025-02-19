@@ -12,7 +12,6 @@ import {
   FaCamera,
   FaImages,
   FaSignOutAlt,
-  FaIdCard,
 } from "react-icons/fa";
 import { firebaseApp } from "../../firebaseconfig";
 import {
@@ -28,7 +27,6 @@ import {
   getDownloadURL,
   deleteObject,
 } from "firebase/storage";
-import { useRouter } from "next/navigation";
 
 // ----- Types -----
 type Medicine = {
@@ -101,7 +99,6 @@ const Dashboard = () => {
   const auth = getAuth(firebaseApp);
   const database = getDatabase(firebaseApp);
   const storage = getStorage(firebaseApp);
-  const router = useRouter();
 
   // ----- States & Refs -----
   const [activeTab, setActiveTab] = useState<"form" | "history">("form");
@@ -170,11 +167,6 @@ const Dashboard = () => {
     } catch (error: any) {
       console.error("Error signing out:", error.message);
     }
-  };
-
-  // ----- Navigation to Smart Card Page -----
-  const handleSmartCard = () => {
-    router.push("/smartcard");
   };
 
   // ----- Document Upload Handlers -----
@@ -314,7 +306,7 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200 p-6">
-      {/* ---- Header with Tabs, Smart Card & Logout Button ---- */}
+      {/* ---- Header with Tabs & Logout Button ---- */}
       <div className="max-w-5xl mx-auto mb-6 flex justify-between items-center">
         <div className="flex border-b border-gray-300">
           <button
@@ -338,20 +330,12 @@ const Dashboard = () => {
             User History
           </button>
         </div>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={handleSmartCard}
-            className="flex items-center gap-1 bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded-md transition-colors"
-          >
-            <FaIdCard /> Smart Card
-          </button>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-md transition-colors"
-          >
-            <FaSignOutAlt /> Logout
-          </button>
-        </div>
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-md transition-colors"
+        >
+          <FaSignOutAlt /> Logout
+        </button>
       </div>
 
       <div className="max-w-5xl mx-auto">
