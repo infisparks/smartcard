@@ -95,7 +95,7 @@ const Dashboard = () => {
     watch,
     control,
     reset,
-    formState: { errors },
+    
   } = useForm({
     defaultValues: {
       professional: "",
