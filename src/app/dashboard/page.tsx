@@ -1,24 +1,27 @@
-'use client';
-
-import { useState, useEffect, useRef } from "react";
+"use client";
+import React, { useState, useEffect } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import {
-  FaUserMd,
-  FaStethoscope,
-  FaPlus,
-  FaTrash,
-  FaSpinner,
-  FaFileAlt,
-  FaCamera,
-  FaImages,
-  FaSignOutAlt,
-} from "react-icons/fa";
+  Activity,
+  AlertCircle,
+  Calendar,
+  Camera,
+  Clock,
+  FileText,
+  HelpCircle,
+  Image,
+  LogOut,
+  Plus,
+  Search,
+  Stethoscope,
+  Trash2,
+  User,
+  UserCheck,
+  X,
+  Menu,
+} from "lucide-react";
 import { firebaseApp } from "../../firebaseconfig";
-import {
-  getAuth,
-  onAuthStateChanged,
-  signOut,
-} from "firebase/auth";
+import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 import { getDatabase, ref, push, get } from "firebase/database";
 import {
   getStorage,
@@ -28,25 +31,25 @@ import {
   deleteObject,
 } from "firebase/storage";
 
-// ----- Types -----
-type Medicine = {
+// ----- Interfaces -----
+interface Medicine {
   name: string;
-  consumption: string[]; // e.g., ["morning", "evening", "night"]
+  consumption: string[];
   duration: string;
-  instruction?: string;
-};
+  instruction: string;
+}
 
-type Test = {
+interface Test {
   testName: string;
   instruction: string;
-};
+}
 
-type UploadedDoc = {
+interface UploadedDoc {
   name: string;
   url: string;
-};
+}
 
-type FormData = {
+interface PrescriptionData {
   professional: string;
   doctorName?: string;
   hospital?: string;
@@ -55,17 +58,45 @@ type FormData = {
   specialInstruction?: string;
   medicines: Medicine[];
   tests: Test[];
-};
+  documents: UploadedDoc[];
+  uid: string;
+  // Optional timestamp if saved that way
+  timestamp?: number;
+}
+
+interface UserData {
+  name: string;
+  email: string;
+  age: string;
+  gender: string;
+  bloodGroup?: string;
+  weight?: string;
+  height?: string;
+}
 
 // ----- Dashboard Component -----
 const Dashboard = () => {
+  // Tab state: "form" or "history"
+  const [activeTab, setActiveTab] = useState<"form" | "history">("form");
+  const [loading, setLoading] = useState(false);
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [uploadedDocs, setUploadedDocs] = useState<UploadedDoc[]>([]);
+  const [historyRecords, setHistoryRecords] = useState<PrescriptionData[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [tooltipContent, setTooltipContent] = useState("");
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+
+  // Setup react-hook-form with default values
   const {
     register,
     handleSubmit,
-    control,
     watch,
+    control,
     reset,
-  } = useForm<FormData>({
+    formState: { errors },
+  } = useForm({
     defaultValues: {
       professional: "",
       doctorName: "",
@@ -73,11 +104,12 @@ const Dashboard = () => {
       date: new Date().toISOString().slice(0, 10),
       symptoms: "",
       specialInstruction: "",
-      medicines: [],
-      tests: [],
+      medicines: [] as Medicine[],
+      tests: [] as Test[],
     },
   });
 
+  // Manage medicines array
   const {
     fields: medicineFields,
     append: appendMedicine,
@@ -87,6 +119,7 @@ const Dashboard = () => {
     name: "medicines",
   });
 
+  // Manage tests array
   const {
     fields: testFields,
     append: appendTest,
@@ -96,34 +129,18 @@ const Dashboard = () => {
     name: "tests",
   });
 
-  const auth = getAuth(firebaseApp);
-  const database = getDatabase(firebaseApp);
-  const storage = getStorage(firebaseApp);
-
-  // ----- States & Refs -----
-  const [activeTab, setActiveTab] = useState<"form" | "history">("form");
-  const [loading, setLoading] = useState(false);
-  const [uploadedDocs, setUploadedDocs] = useState<UploadedDoc[]>([]);
-  const [uploadedPrescriptions, setUploadedPrescriptions] = useState<UploadedDoc[]>([]);
-  const [userData, setUserData] = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-
-  // Refs for hidden prescription file inputs
-  const prescriptionCameraInputRef = useRef<HTMLInputElement>(null);
-  const prescriptionGalleryInputRef = useRef<HTMLInputElement>(null);
-
-  // Watch professional value to conditionally hide/show fields.
+  // Watch professional value to conditionally show doctor/hospital fields
   const professionalValue = watch("professional");
 
-  // ----- Listen for Auth State Changes & Fetch User Data -----
+  // ----- Firebase: Listen for Auth Changes and Fetch Data -----
   useEffect(() => {
+    const auth = getAuth(firebaseApp);
+    const db = getDatabase(firebaseApp);
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // Fetch user details
         const uid = user.uid;
-        const userRef = ref(database, `users/${uid}`);
-        get(userRef)
+        // Fetch user details (assumed stored under "users/{uid}")
+        get(ref(db, `users/${uid}`))
           .then((snapshot) => {
             if (snapshot.exists()) {
               setUserData(snapshot.val());
@@ -131,25 +148,24 @@ const Dashboard = () => {
           })
           .catch((err) => console.error("Error fetching user data:", err));
 
-        // If in history tab, fetch prescription records
+        // If on history tab, fetch prescription records from the "detail" node
         if (activeTab === "history") {
-          const detailsRef = ref(database, `users/${uid}/detail`);
-          get(detailsRef)
+          get(ref(db, `users/${uid}/detail`))
             .then((snapshot) => {
               if (snapshot.exists()) {
                 const data = snapshot.val();
-                const historyData = Object.keys(data).map((key) => ({
+                const records = Object.keys(data).map((key) => ({
                   id: key,
                   ...data[key],
                 }));
-                // Sort by date descending (latest first)
-                historyData.sort(
+                // Sort records by date descending (latest first)
+                records.sort(
                   (a, b) =>
                     new Date(b.date).getTime() - new Date(a.date).getTime()
                 );
-                setHistory(historyData);
+                setHistoryRecords(records);
               } else {
-                setHistory([]);
+                setHistoryRecords([]);
               }
             })
             .catch((err) => console.error("Error fetching history:", err));
@@ -157,792 +173,872 @@ const Dashboard = () => {
       }
     });
     return () => unsubscribe();
-  }, [activeTab, auth, database]);
+  }, [activeTab]);
+
+  // ----- Tooltip Helper -----
+  const showTooltipMessage = (
+    message: string,
+    event: React.SyntheticEvent
+  ) => {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    setTooltipContent(message);
+    setTooltipPosition({
+      x: rect.left + rect.width / 2,
+      y: rect.top - 10,
+    });
+    setShowTooltip(true);
+    setTimeout(() => setShowTooltip(false), 3000);
+  };
 
   // ----- Logout Handler -----
   const handleLogout = async () => {
+    const auth = getAuth(firebaseApp);
     try {
       await signOut(auth);
-      alert("You have been logged out.");
-    } catch (error: any) {
-      console.error("Error signing out:", error.message);
-    }
-  };
-
-  // ----- Document Upload Handlers -----
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      alert("User not logged in");
-      return;
-    }
-    const uid = currentUser.uid;
-    const newDocs: UploadedDoc[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const uniqueName = `${Date.now()}_${file.name}`;
-      const fileRef = storageRef(
-        storage,
-        `users/${uid}/documents/${uniqueName}`
-      );
-      try {
-        await uploadBytes(fileRef, file);
-        const downloadURL = await getDownloadURL(fileRef);
-        newDocs.push({ name: uniqueName, url: downloadURL });
-      } catch (error: any) {
-        console.error("Error uploading file:", error.message);
-      }
-    }
-    setUploadedDocs((prev) => [...prev, ...newDocs]);
-    e.target.value = "";
-  };
-
-  const handleRemoveDoc = async (index: number) => {
-    const doc = uploadedDocs[index];
-    const currentUser = auth.currentUser;
-    if (!currentUser) return;
-    const uid = currentUser.uid;
-    try {
-      const fileRef = storageRef(
-        storage,
-        `users/${uid}/documents/${doc.name}`
-      );
-      await deleteObject(fileRef);
+      // You may redirect to a login page here if needed
     } catch (error) {
-      console.error("Error deleting file:", error);
+      console.error("Logout error:", error);
     }
-    setUploadedDocs((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // ----- Prescription Upload Handler (Shared for both Camera & Gallery) -----
-  const handlePrescriptionUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      alert("User not logged in");
-      return;
-    }
-    const uid = currentUser.uid;
-    const newPrescriptions: UploadedDoc[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const uniqueName = `${Date.now()}_${file.name}`;
-      const fileRef = storageRef(
-        storage,
-        `users/${uid}/prescriptions/${uniqueName}`
-      );
-      try {
-        await uploadBytes(fileRef, file);
-        const downloadURL = await getDownloadURL(fileRef);
-        newPrescriptions.push({ name: uniqueName, url: downloadURL });
-      } catch (error: any) {
-        console.error("Error uploading prescription:", error.message);
-      }
-    }
-    setUploadedPrescriptions((prev) => [...prev, ...newPrescriptions]);
-    e.target.value = "";
-  };
-
-  const handleRemovePrescription = async (index: number) => {
-    const pres = uploadedPrescriptions[index];
-    const currentUser = auth.currentUser;
-    if (!currentUser) return;
-    const uid = currentUser.uid;
-    try {
-      const fileRef = storageRef(
-        storage,
-        `users/${uid}/prescriptions/${pres.name}`
-      );
-      await deleteObject(fileRef);
-    } catch (error) {
-      console.error("Error deleting prescription:", error);
-    }
-    setUploadedPrescriptions((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  // ----- Form Submission: Save Prescription Data -----
-  const onSubmit = async (data: FormData) => {
+  // ----- File Upload Handler -----
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    if (!event.target.files) return;
     setLoading(true);
+    const files = Array.from(event.target.files);
+    const storage = getStorage(firebaseApp);
     try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error("User not logged in");
+      const uploadPromises = files.map(async (file) => {
+        const uniqueName = `${Date.now()}_${file.name}`;
+        const fileRef = storageRef(storage, `documents/${uniqueName}`);
+        await uploadBytes(fileRef, file);
+        const url = await getDownloadURL(fileRef);
+        return { name: uniqueName, url };
+      });
+      const newDocs = await Promise.all(uploadPromises);
+      setUploadedDocs((prev) => [...prev, ...newDocs]);
+      showTooltipMessage("Files uploaded successfully!", event);
+    } catch (error: any) {
+      console.error("Upload error:", error);
+      showTooltipMessage(
+        "Error uploading files. Please try again.",
+        event
+      );
+    } finally {
+      setLoading(false);
+      event.target.value = "";
+    }
+  };
+
+  // ----- Remove Document Handler -----
+  const handleRemoveDoc = async (
+    index: number,
+    event: React.MouseEvent
+  ) => {
+    const doc = uploadedDocs[index];
+    const storage = getStorage(firebaseApp);
+    try {
+      const docRef = storageRef(storage, `documents/${doc.name}`);
+      await deleteObject(docRef);
+      setUploadedDocs((prev) => prev.filter((_, i) => i !== index));
+      showTooltipMessage("Document removed successfully!", event);
+    } catch (error) {
+      console.error("Delete error:", error);
+      showTooltipMessage(
+        "Error removing document. Please try again.",
+        event
+      );
+    }
+  };
+
+  // ----- Form Submission -----
+  const onSubmit = async (data: any) => {
+    setLoading(true);
+    const auth = getAuth(firebaseApp);
+    const db = getDatabase(firebaseApp);
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      showTooltipMessage(
+        "User not logged in",
+        { currentTarget: document.body } as React.SyntheticEvent
+      );
+      setLoading(false);
+      return;
+    }
+    try {
       const uid = currentUser.uid;
-      const finalData = {
+      const prescriptionData: PrescriptionData = {
         ...data,
         documents: uploadedDocs,
-        prescriptions: uploadedPrescriptions,
+        uid,
+        timestamp: Date.now(),
       };
-      await push(ref(database, `users/${uid}/detail`), finalData);
-      alert("Data saved successfully!");
+      // Save the prescription under the user's "detail" node
+      await push(ref(db, `users/${uid}/detail`), prescriptionData);
+      showTooltipMessage(
+        "Prescription saved successfully!",
+        { currentTarget: document.body } as React.SyntheticEvent
+      );
       reset();
       setUploadedDocs([]);
-      setUploadedPrescriptions([]);
-    } catch (error: any) {
-      console.error("Error saving data:", error.message);
-      alert("Error saving data. Please try again.");
+    } catch (error) {
+      console.error("Submit error:", error);
+      showTooltipMessage(
+        "Error saving prescription. Please try again.",
+        { currentTarget: document.body } as React.SyntheticEvent
+      );
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  // ----- Filter History based on Search Query -----
-  const filteredHistory = history.filter((record) => {
+  // ----- Utility: Check if file is an image -----
+  const isImageFile = (filename: string) => {
+    return /\.(jpg|jpeg|png|gif)$/i.test(filename);
+  };
+
+  // ----- Compute Filtered History Based on Search Query -----
+  const filteredHistory = historyRecords.filter((record) => {
     const query = searchQuery.toLowerCase();
     return (
-      record.professional?.toLowerCase().includes(query) ||
-      record.doctorName?.toLowerCase().includes(query) ||
-      record.hospital?.toLowerCase().includes(query) ||
-      record.symptoms?.toLowerCase().includes(query) ||
-      record.date?.toLowerCase().includes(query)
+      record.date.toLowerCase().includes(query) ||
+      record.professional.toLowerCase().includes(query) ||
+      (record.doctorName &&
+        record.doctorName.toLowerCase().includes(query)) ||
+      (record.hospital &&
+        record.hospital.toLowerCase().includes(query)) ||
+      record.symptoms.toLowerCase().includes(query)
     );
   });
 
-  // Helper: Check if file is an image based on extension
-  const isImageFile = (filename: string) => {
-    return /\.(jpeg|jpg|gif|png)$/i.test(filename);
-  };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200 p-6">
-      {/* ---- Header with Tabs & Logout Button ---- */}
-      <div className="max-w-5xl mx-auto mb-6 flex justify-between items-center">
-        <div className="flex border-b border-gray-300">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      {/* ----- Header ----- */}
+      <header className="bg-white shadow-lg px-6 py-4 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="bg-gradient-to-r from-blue-500 to-indigo-500 p-2 rounded-lg">
+              <Activity className="w-6 h-6 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              Infi Care
+            </h1>
+          </div>
+          {/* Desktop Navigation */}
+          <nav className="hidden md:flex items-center gap-4">
+            <button
+              onClick={() => {
+                setActiveTab("form");
+                setShowMobileMenu(false);
+              }}
+              className={`px-4 py-2 rounded-lg transition-all duration-300 ${
+                activeTab === "form"
+                  ? "bg-blue-100 text-blue-600"
+                  : "text-gray-600 hover:bg-gray-100"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4" />
+                <span>Prescription</span>
+              </div>
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("history");
+                setShowMobileMenu(false);
+              }}
+              className={`px-4 py-2 rounded-lg transition-all duration-300 ${
+                activeTab === "history"
+                  ? "bg-blue-100 text-blue-600"
+                  : "text-gray-600 hover:bg-gray-100"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                <span>History</span>
+              </div>
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg transition-all duration-300"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Logout</span>
+            </button>
+          </nav>
+          {/* Mobile Navigation Toggle */}
           <button
-            onClick={() => setActiveTab("form")}
-            className={`px-4 py-2 font-semibold transition-colors ${
-              activeTab === "form"
-                ? "border-b-2 border-green-600 text-green-600"
-                : "text-gray-600 hover:text-green-600"
-            }`}
+            className="md:hidden"
+            onClick={() => setShowMobileMenu(!showMobileMenu)}
           >
-            Prescription
-          </button>
-          <button
-            onClick={() => setActiveTab("history")}
-            className={`px-4 py-2 font-semibold transition-colors ${
-              activeTab === "history"
-                ? "border-b-2 border-green-600 text-green-600"
-                : "text-gray-600 hover:text-green-600"
-            }`}
-          >
-            User History
+            {showMobileMenu ? (
+              <X className="w-6 h-6" />
+            ) : (
+              <Menu className="w-6 h-6" />
+            )}
           </button>
         </div>
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-md transition-colors"
-        >
-          <FaSignOutAlt /> Logout
-        </button>
-      </div>
+        {/* Mobile Navigation Menu */}
+        {showMobileMenu && (
+          <nav className="md:hidden mt-4">
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => {
+                  setActiveTab("form");
+                  setShowMobileMenu(false);
+                }}
+                className={`px-4 py-2 rounded-lg transition-all duration-300 ${
+                  activeTab === "form"
+                    ? "bg-blue-100 text-blue-600"
+                    : "text-gray-600 hover:bg-gray-100"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  <span>Prescription</span>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab("history");
+                  setShowMobileMenu(false);
+                }}
+                className={`px-4 py-2 rounded-lg transition-all duration-300 ${
+                  activeTab === "history"
+                    ? "bg-blue-100 text-blue-600"
+                    : "text-gray-600 hover:bg-gray-100"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  <span>History</span>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  handleLogout();
+                  setShowMobileMenu(false);
+                }}
+                className="flex items-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg transition-all duration-300"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Logout</span>
+              </button>
+            </div>
+          </nav>
+        )}
+      </header>
 
-      <div className="max-w-5xl mx-auto">
+      {/* ----- Main Content ----- */}
+      <main className="max-w-7xl mx-auto px-6 py-8">
         {activeTab === "form" ? (
           <>
-            {/* ---- Patient Details Card ---- */}
-            <div className="bg-white shadow-lg rounded-lg p-6 mb-6">
-              <h2 className="text-2xl font-bold mb-4">Patient Details</h2>
+            {/* Patient Details Card */}
+            <div className="bg-white rounded-xl shadow-lg p-6 mb-8 hover:shadow-xl transition-all duration-300">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="bg-green-100 p-2 rounded-lg">
+                  <User className="w-5 h-5 text-green-600" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-800">
+                  Patient Details
+                </h2>
+              </div>
               {userData ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-gray-700">
-                      <span className="font-semibold">Name:</span> {userData.name}
-                    </p>
-                    <p className="text-gray-700">
-                      <span className="font-semibold">Email:</span> {userData.email}
-                    </p>
-                    <p className="text-gray-700">
-                      <span className="font-semibold">Age:</span> {userData.age}
-                    </p>
-                    {userData.gender && (
-                      <p className="text-gray-700">
-                        <span className="font-semibold">Gender:</span> {userData.gender}
-                      </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-4">
+                    {Object.entries({
+                      Name: userData.name,
+                      Email: userData.email,
+                      Age: userData.age,
+                      Gender: userData.gender,
+                    }).map(
+                      ([key, value]) =>
+                        value && (
+                          <div key={key} className="flex items-center gap-2">
+                            <span className="text-gray-500 font-medium min-w-[100px]">
+                              {key}:
+                            </span>
+                            <span className="text-gray-800">{value}</span>
+                          </div>
+                        )
                     )}
                   </div>
-                  <div>
-                    {userData.bloodGroup && (
-                      <p className="text-gray-700">
-                        <span className="font-semibold">Blood Group:</span> {userData.bloodGroup}
-                      </p>
-                    )}
-                    {userData.weight && (
-                      <p className="text-gray-700">
-                        <span className="font-semibold">Weight:</span> {userData.weight} kg
-                      </p>
-                    )}
-                    {userData.height && (
-                      <p className="text-gray-700">
-                        <span className="font-semibold">Height:</span> {userData.height} cm
-                      </p>
+                  <div className="space-y-4">
+                    {Object.entries({
+                      "Blood Group": userData.bloodGroup,
+                      Weight: userData.weight ? `${userData.weight} kg` : null,
+                      Height: userData.height ? `${userData.height} cm` : null,
+                    }).map(
+                      ([key, value]) =>
+                        value && (
+                          <div key={key} className="flex items-center gap-2">
+                            <span className="text-gray-500 font-medium min-w-[100px]">
+                              {key}:
+                            </span>
+                            <span className="text-gray-800">{value}</span>
+                          </div>
+                        )
                     )}
                   </div>
                 </div>
               ) : (
-                <p className="text-gray-600">Loading patient details...</p>
+                <div className="flex items-center gap-2 text-gray-500">
+                  <Clock className="w-5 h-5 animate-spin" />
+                  <span>Loading patient details...</span>
+                </div>
               )}
             </div>
 
-            {/* ---- Prescription Form ---- */}
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-10">
-              {/* ---- Doctor Details Card ---- */}
-              <div className="bg-white shadow-lg rounded-lg p-6">
-                <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                  <FaUserMd className="text-blue-600" /> Doctor Details
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Professional */}
-                  <div>
-                    <label className="block text-sm font-medium">
+            {/* Prescription Form */}
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+              {/* Doctor Details */}
+              <div className="bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-all duration-300">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="bg-blue-100 p-2 rounded-lg">
+                    <UserCheck className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <h2 className="text-xl font-bold text-gray-800">
+                    Doctor Details
+                  </h2>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {/* Professional Select */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
                       Professional
                     </label>
-                    <select
-                      {...register("professional", { required: true })}
-                      className="mt-1 block w-full border-gray-300 rounded-md p-2 focus:ring focus:ring-blue-200"
-                    >
-                      <option value="">Select Professional</option>
-                      <option value="cardiologist">Cardiologist</option>
-                      <option value="neurologist">Neurologist</option>
-                      <option value="dermatologist">Dermatologist</option>
-                      <option value="general">General Practitioner</option>
-                      <option value="self">Self</option>
-                    </select>
+                    <div className="relative">
+                      <select
+                        {...register("professional", { required: true })}
+                        className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
+                      >
+                        <option value="">Select Professional</option>
+                        <option value="cardiologist">Cardiologist</option>
+                        <option value="neurologist">Neurologist</option>
+                        <option value="dermatologist">Dermatologist</option>
+                        <option value="general">General Practitioner</option>
+                        <option value="self">Self</option>
+                      </select>
+                      <UserCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    </div>
                   </div>
 
-                  {/* Conditionally Render Doctor's Name & Hospital if NOT "Self" */}
+                  {/* Conditionally Render Doctor Name & Hospital */}
                   {professionalValue !== "self" && (
                     <>
-                      <div>
-                        <label className="block text-sm font-medium">
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-700">
                           Doctor Name
                         </label>
-                        <input
-                          {...register("doctorName", {
-                            required: professionalValue !== "self",
-                          })}
-                          type="text"
-                          placeholder="Enter your name"
-                          className="mt-1 block w-full border-gray-300 rounded-md p-2 focus:ring focus:ring-blue-200"
-                        />
+                        <div className="relative">
+                          <input
+                            {...register("doctorName", {
+                              required: professionalValue !== "self",
+                            })}
+                            type="text"
+                            placeholder="Enter doctor's name"
+                            className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
+                          />
+                          <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium">
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-700">
                           Hospital Name
                         </label>
-                        <input
-                          {...register("hospital", {
-                            required: professionalValue !== "self",
-                          })}
-                          type="text"
-                          placeholder="Enter hospital name"
-                          className="mt-1 block w-full border-gray-300 rounded-md p-2 focus:ring focus:ring-blue-200"
-                        />
+                        <div className="relative">
+                          <input
+                            {...register("hospital", {
+                              required: professionalValue !== "self",
+                            })}
+                            type="text"
+                            placeholder="Enter hospital name"
+                            className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
+                          />
+                          <FileText className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        </div>
                       </div>
                     </>
                   )}
 
                   {/* Date Field */}
-                  <div>
-                    <label className="block text-sm font-medium">Date</label>
-                    <input
-                      {...register("date", { required: true })}
-                      type="date"
-                      className="mt-1 block w-full border-gray-300 rounded-md p-2 focus:ring focus:ring-blue-200"
-                    />
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Date
+                    </label>
+                    <div className="relative">
+                      <input
+                        {...register("date", { required: true })}
+                        type="date"
+                        className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
+                      />
+                      <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* ---- Symptoms & Prescription Card ---- */}
-              <div className="bg-white shadow-lg rounded-lg p-6 space-y-8">
-                <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                  <FaStethoscope className="text-green-600" /> Symptoms & Prescription
-                </h2>
-                {/* Symptoms / Decision */}
-                <div>
-                  <label className="block text-sm font-medium">
-                    Symptoms / Decision
-                  </label>
-                  <textarea
-                    {...register("symptoms", { required: true })}
-                    rows={4}
-                    placeholder="Describe the symptoms or your decision..."
-                    className="mt-1 block w-full border-gray-300 rounded-md p-2 focus:ring focus:ring-green-200"
-                  />
-                </div>
-
-                {/* Special Instructions */}
-                <div>
-                  <label className="block text-sm font-medium">
-                    Special Instructions (Optional)
-                  </label>
-                  <textarea
-                    {...register("specialInstruction")}
-                    rows={3}
-                    placeholder="Any additional instructions..."
-                    className="mt-1 block w-full border-gray-300 rounded-md p-2 focus:ring focus:ring-green-200"
-                  />
-                </div>
-
-                {/* Document Upload */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Upload Documents (Camera or Gallery)
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                  />
-                  {uploadedDocs.length > 0 && (
-                    <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {uploadedDocs.map((doc, index) => (
-                        <div
-                          key={index}
-                          className="relative border rounded p-2 bg-gray-50"
-                        >
-                          {isImageFile(doc.name) ? (
-                            <img
-                              src={doc.url}
-                              alt={doc.name}
-                              className="object-cover h-24 w-full rounded cursor-pointer"
-                              onClick={() => window.open(doc.url, "_blank")}
-                            />
-                          ) : (
-                            <div
-                              className="flex flex-col items-center justify-center h-24 cursor-pointer"
-                              onClick={() => window.open(doc.url, "_blank")}
-                            >
-                              <FaFileAlt className="text-3xl text-gray-500" />
-                              <p className="text-xs text-gray-600 truncate">
-                                {doc.name}
-                              </p>
-                            </div>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveDoc(index)}
-                            className="absolute top-1 right-1 text-red-500 hover:text-red-700"
-                          >
-                            <FaTrash />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Prescription Upload Section */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Upload Prescription Image(s)
-                  </label>
-                  <div className="flex gap-4">
-                    <button
-                      type="button"
-                      onClick={() => prescriptionCameraInputRef.current?.click()}
-                      className="flex items-center gap-1 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md transition-colors"
-                    >
-                      <FaCamera /> Capture from Camera
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => prescriptionGalleryInputRef.current?.click()}
-                      className="flex items-center gap-1 bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-md transition-colors"
-                    >
-                      <FaImages /> Select from Gallery
-                    </button>
+              {/* Symptoms & Prescription */}
+              <div className="bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-all duration-300">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="bg-purple-100 p-2 rounded-lg">
+                    <Stethoscope className="w-5 h-5 text-purple-600" />
                   </div>
-                  {/* Hidden file inputs */}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    ref={prescriptionCameraInputRef}
-                    onChange={handlePrescriptionUpload}
-                    className="hidden"
-                  />
-                  <input
-                    type="file"
-                    accept="image/*"
-                    ref={prescriptionGalleryInputRef}
-                    onChange={handlePrescriptionUpload}
-                    className="hidden"
-                  />
-                  {uploadedPrescriptions.length > 0 && (
-                    <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {uploadedPrescriptions.map((pres, index) => (
-                        <div
-                          key={index}
-                          className="relative border rounded p-2 bg-gray-50"
-                        >
-                          {isImageFile(pres.name) ? (
-                            <img
-                              src={pres.url}
-                              alt={pres.name}
-                              className="object-cover h-24 w-full rounded cursor-pointer"
-                              onClick={() => window.open(pres.url, "_blank")}
-                            />
-                          ) : (
-                            <div
-                              className="flex flex-col items-center justify-center h-24 cursor-pointer"
-                              onClick={() => window.open(pres.url, "_blank")}
+                  <h2 className="text-xl font-bold text-gray-800">
+                    Symptoms & Prescription
+                  </h2>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Symptoms */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Symptoms / Decision
+                    </label>
+                    <textarea
+                      {...register("symptoms", { required: true })}
+                      rows={4}
+                      placeholder="Describe the symptoms or your decision..."
+                      className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
+                    />
+                  </div>
+
+                  {/* Special Instructions */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Special Instructions (Optional)
+                    </label>
+                    <textarea
+                      {...register("specialInstruction")}
+                      rows={3}
+                      placeholder="Any additional instructions..."
+                      className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
+                    />
+                  </div>
+
+                  {/* Document Upload */}
+                  <div className="space-y-4">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Upload Documents
+                    </label>
+                    <div className="flex flex-wrap gap-4">
+                      <label className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors duration-300">
+                        <Camera className="w-4 h-4" />
+                        <span>Take Photo</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-600 rounded-lg cursor-pointer hover:bg-green-100 transition-colors duration-300">
+                        <Image className="w-4 h-4" />
+                        <span>Choose Files</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
+                    {/* Document Preview */}
+                    {uploadedDocs.length > 0 && (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                        {uploadedDocs.map((doc, index) => (
+                          <div
+                            key={index}
+                            className="group relative rounded-lg overflow-hidden bg-gray-50 hover:shadow-lg transition-all duration-300"
+                          >
+                            {isImageFile(doc.name) ? (
+                              <img
+                                src={doc.url}
+                                alt={doc.name}
+                                className="w-full h-32 object-cover cursor-pointer"
+                                onClick={() => window.open(doc.url, "_blank")}
+                              />
+                            ) : (
+                              <div
+                                className="h-32 flex flex-col items-center justify-center p-4 cursor-pointer"
+                                onClick={() => window.open(doc.url, "_blank")}
+                              >
+                                <FileText className="w-8 h-8 text-gray-400 mb-2" />
+                                <p className="text-xs text-gray-600 text-center truncate w-full">
+                                  {doc.name}
+                                </p>
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => handleRemoveDoc(index, e)}
+                              className="absolute top-2 right-2 p-1 bg-red-100 text-red-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                             >
-                              <FaFileAlt className="text-3xl text-gray-500" />
-                              <p className="text-xs text-gray-600 truncate">
-                                {pres.name}
-                              </p>
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Medicines Section */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-blue-500" />
+                        Medicines
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          appendMedicine({
+                            name: "",
+                            consumption: [],
+                            duration: "",
+                            instruction: "",
+                          })
+                        }
+                        className="flex items-center gap-2 text-blue-600 hover:text-blue-700 transition-colors duration-300"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Add Medicine</span>
+                      </button>
+                    </div>
+                    <div className="space-y-4">
+                      {medicineFields.map((field, index) => (
+                        <div
+                          key={field.id}
+                          className="p-4 rounded-lg bg-gray-50 border border-gray-100 hover:shadow-md transition-all duration-300"
+                        >
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <label className="block text-sm font-medium text-gray-700">
+                                Medicine Name
+                              </label>
+                              <input
+                                {...register(
+                                  `medicines.${index}.name` as const,
+                                  { required: true }
+                                )}
+                                placeholder="Enter medicine name"
+                                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
+                              />
                             </div>
-                          )}
+                            <div className="space-y-2">
+                              <label className="block text-sm font-medium text-gray-700">
+                                Duration
+                              </label>
+                              <input
+                                {...register(
+                                  `medicines.${index}.duration` as const,
+                                  { required: true }
+                                )}
+                                placeholder="e.g., 5 days"
+                                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-4 space-y-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Consumption Time
+                            </label>
+                            <div className="flex flex-wrap gap-4">
+                              {["morning", "afternoon", "evening", "night"].map(
+                                (time) => (
+                                  <label
+                                    key={time}
+                                    className="flex items-center gap-2 cursor-pointer"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      value={time}
+                                      {...register(
+                                        `medicines.${index}.consumption` as const
+                                      )}
+                                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm text-gray-700 capitalize">
+                                      {time}
+                                    </span>
+                                  </label>
+                                )
+                              )}
+                            </div>
+                          </div>
+                          <div className="mt-4 space-y-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Instructions (Optional)
+                            </label>
+                            <input
+                              {...register(
+                                `medicines.${index}.instruction` as const
+                              )}
+                              placeholder="Additional instructions"
+                              className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
+                            />
+                          </div>
                           <button
                             type="button"
-                            onClick={() => handleRemovePrescription(index)}
-                            className="absolute top-1 right-1 text-red-500 hover:text-red-700"
+                            onClick={() => removeMedicine(index)}
+                            className="mt-4 flex items-center gap-2 text-red-500 hover:text-red-600 transition-colors duration-300"
                           >
-                            <FaTrash />
+                            <Trash2 className="w-4 h-4" />
+                            <span>Remove Medicine</span>
                           </button>
                         </div>
                       ))}
                     </div>
-                  )}
-                </div>
+                  </div>
 
-                {/* Medicines Section */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Medicines
-                  </label>
-                  {medicineFields.map((field, index) => (
-                    <div
-                      key={field.id}
-                      className="mb-6 border p-4 rounded-lg bg-gray-50"
-                    >
-                      <div className="mb-3">
-                        <label className="block text-sm font-medium">
-                          Medicine Name
-                        </label>
-                        <input
-                          {...register(
-                            `medicines.${index}.name` as const,
-                            { required: true }
-                          )}
-                          type="text"
-                          placeholder="Enter medicine name"
-                          className="mt-1 block w-full border-gray-300 rounded-md p-2 focus:ring focus:ring-blue-200"
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="block text-sm font-medium">
-                          Consumption Time
-                        </label>
-                        <div className="flex gap-4 mt-1">
-                          {["morning", "evening", "night"].map((time) => (
-                            <label
-                              key={time}
-                              className="flex items-center space-x-1 text-sm"
-                            >
+                  {/* Tests Section */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-purple-500" />
+                        Tests
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => appendTest({ testName: "", instruction: "" })}
+                        className="flex items-center gap-2 text-purple-600 hover:text-purple-700 transition-colors duration-300"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Add Test</span>
+                      </button>
+                    </div>
+                    <div className="space-y-4">
+                      {testFields.map((field, index) => (
+                        <div
+                          key={field.id}
+                          className="p-4 rounded-lg bg-gray-50 border border-gray-100 hover:shadow-md transition-all duration-300"
+                        >
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <label className="block text-sm font-medium text-gray-700">
+                                Test Name
+                              </label>
                               <input
-                                type="checkbox"
-                                value={time}
-                                {...register(
-                                  `medicines.${index}.consumption` as const
-                                )}
-                                className="h-4 w-4"
+                                {...register(`tests.${index}.testName` as const, { required: true })}
+                                placeholder="Enter test name"
+                                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
                               />
-                              <span className="capitalize">{time}</span>
-                            </label>
-                          ))}
+                            </div>
+                            <div className="space-y-2">
+                              <label className="block text-sm font-medium text-gray-700">
+                                Instructions
+                              </label>
+                              <input
+                                {...register(`tests.${index}.instruction` as const, { required: true })}
+                                placeholder="Test instructions"
+                                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
+                              />
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeTest(index)}
+                            className="mt-4 flex items-center gap-2 text-red-500 hover:text-red-600 transition-colors duration-300"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            <span>Remove Test</span>
+                          </button>
                         </div>
-                      </div>
-                      <div className="mb-3">
-                        <label className="block text-sm font-medium">
-                          Duration
-                        </label>
-                        <input
-                          {...register(
-                            `medicines.${index}.duration` as const,
-                            { required: true }
-                          )}
-                          type="text"
-                          placeholder="e.g., 5 days"
-                          className="mt-1 block w-full border-gray-300 rounded-md p-2 focus:ring focus:ring-blue-200"
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="block text-sm font-medium">
-                          Instructions (Optional)
-                        </label>
-                        <input
-                          {...register(`medicines.${index}.instruction` as const)}
-                          type="text"
-                          placeholder="Additional instructions"
-                          className="mt-1 block w-full border-gray-300 rounded-md p-2 focus:ring focus:ring-blue-200"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeMedicine(index)}
-                        className="flex items-center gap-1 text-red-500 text-sm hover:underline"
-                      >
-                        <FaTrash /> Remove Medicine
-                      </button>
+                      ))}
                     </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      appendMedicine({
-                        name: "",
-                        consumption: [],
-                        duration: "",
-                        instruction: "",
-                      })
-                    }
-                    className="flex items-center gap-2 text-blue-600 hover:underline"
-                  >
-                    <FaPlus /> Add Medicine
-                  </button>
+                  </div>
                 </div>
 
-                {/* Tests Section */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Tests
-                  </label>
-                  {testFields.map((field, index) => (
-                    <div
-                      key={field.id}
-                      className="mb-6 border p-4 rounded-lg bg-gray-50"
-                    >
-                      <div className="mb-3">
-                        <label className="block text-sm font-medium">
-                          Test Name
-                        </label>
-                        <input
-                          {...register(
-                            `tests.${index}.testName` as const,
-                            { required: true }
-                          )}
-                          type="text"
-                          placeholder="Enter test name (e.g., X-ray, Blood Test)"
-                          className="mt-1 block w-full border-gray-300 rounded-md p-2 focus:ring focus:ring-blue-200"
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="block text-sm font-medium">
-                          Instructions
-                        </label>
-                        <input
-                          {...register(
-                            `tests.${index}.instruction` as const,
-                            { required: true }
-                          )}
-                          type="text"
-                          placeholder="Additional instructions for the test"
-                          className="mt-1 block w-full border-gray-300 rounded-md p-2 focus:ring focus:ring-blue-200"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeTest(index)}
-                        className="flex items-center gap-1 text-red-500 text-sm hover:underline"
-                      >
-                        <FaTrash /> Remove Test
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      appendTest({ testName: "", instruction: "" })
-                    }
-                    className="flex items-center gap-2 text-blue-600 hover:underline"
-                  >
-                    <FaPlus /> Add Test
-                  </button>
-                </div>
-
-                {/* Save Button */}
-                <div className="flex justify-end">
+                {/* Submit Button */}
+                <div className="mt-8 flex justify-end">
                   <button
                     type="submit"
                     disabled={loading}
-                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200"
+                    className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:from-blue-600 hover:to-blue-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {loading && <FaSpinner className="animate-spin" />}
-                    <span>{loading ? "Saving..." : "Save Prescription"}</span>
+                    {loading ? (
+                      <>
+                        <Clock className="w-5 h-5 animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="w-5 h-5" />
+                        <span>Save Prescription</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
             </form>
           </>
         ) : (
-          // ----- User History Tab -----
-          <div className="bg-white shadow-lg rounded-lg p-6">
-            <h2 className="text-2xl font-bold mb-4">User History</h2>
-            {/* Search Bar */}
-            <div className="mb-4">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search history..."
-                className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring focus:ring-green-200"
-              />
-            </div>
-            {/* User Main Details */}
-            {userData ? (
-              <div className="mb-6 p-4 border rounded-lg bg-gray-50">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-gray-700">
-                      <span className="font-semibold">Name:</span> {userData.name}
-                    </p>
-                    <p className="text-gray-700">
-                      <span className="font-semibold">Email:</span> {userData.email}
-                    </p>
-                    <p className="text-gray-700">
-                      <span className="font-semibold">Age:</span> {userData.age}
-                    </p>
-                    {userData.gender && (
-                      <p className="text-gray-700">
-                        <span className="font-semibold">Gender:</span> {userData.gender}
-                      </p>
-                    )}
-                  </div>
-                  <div>
-                    {userData.bloodGroup && (
-                      <p className="text-gray-700">
-                        <span className="font-semibold">Blood Group:</span> {userData.bloodGroup}
-                      </p>
-                    )}
-                    {userData.weight && (
-                      <p className="text-gray-700">
-                        <span className="font-semibold">Weight:</span> {userData.weight} kg
-                      </p>
-                    )}
-                    {userData.height && (
-                      <p className="text-gray-700">
-                        <span className="font-semibold">Height:</span> {userData.height} cm
-                      </p>
-                    )}
-                  </div>
+          // ----- History Tab -----
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-3">
+                <div className="bg-purple-100 p-2 rounded-lg">
+                  <Calendar className="w-5 h-5 text-purple-600" />
                 </div>
+                User History
+              </h2>
+              <div className="relative w-64">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search history..."
+                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
+                />
               </div>
-            ) : (
-              <p className="text-gray-600">Loading user details...</p>
-            )}
+            </div>
 
-            {/* Prescription Records */}
-            {filteredHistory.length > 0 ? (
-              <div className="space-y-6">
-                {filteredHistory.map((record) => (
+            {/* History Records */}
+            <div className="space-y-6">
+              {filteredHistory.length > 0 ? (
+                filteredHistory.map((record) => (
                   <div
                     key={record.id}
-                    className="border p-6 rounded-lg bg-white shadow hover:shadow-lg transition-shadow"
+                    className="border border-gray-100 rounded-lg p-6 hover:shadow-md transition-all duration-300"
                   >
-                    <div className="flex justify-between items-center mb-4">
-                      <div>
-                        <p className="text-sm text-gray-600">
-                          <span className="font-semibold">Date:</span> {record.date}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          <span className="font-semibold">Professional:</span> {record.professional}
-                        </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-gray-600">
+                          <Calendar className="w-4 h-4 text-blue-500" />
+                          <span className="font-medium">Date:</span>
+                          {record.date}
+                        </div>
+                        <div className="flex items-center gap-2 text-gray-600">
+                          <UserCheck className="w-4 h-4 text-green-500" />
+                          <span className="font-medium">Professional:</span>
+                          {record.professional}
+                        </div>
                         {record.doctorName && (
-                          <p className="text-sm text-gray-600">
-                            <span className="font-semibold">Doctor Name:</span> {record.doctorName}
-                          </p>
+                          <div className="flex items-center gap-2 text-gray-600">
+                            <User className="w-4 h-4 text-purple-500" />
+                            <span className="font-medium">Doctor:</span>
+                            {record.doctorName}
+                          </div>
                         )}
+                      </div>
+                      <div className="space-y-2">
                         {record.hospital && (
-                          <p className="text-sm text-gray-600">
-                            <span className="font-semibold">Hospital:</span> {record.hospital}
-                          </p>
+                          <div className="flex items-center gap-2 text-gray-600">
+                            <FileText className="w-4 h-4 text-red-500" />
+                            <span className="font-medium">Hospital:</span>
+                            {record.hospital}
+                          </div>
                         )}
                       </div>
                     </div>
-                    <div className="mb-4">
-                      <p className="text-gray-700 mb-2">
-                        <span className="font-semibold">Symptoms:</span> {record.symptoms}
-                      </p>
+                    <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                      <h3 className="font-medium text-gray-800 mb-2 flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-blue-500" />
+                        Symptoms
+                      </h3>
+                      <p className="text-gray-600">{record.symptoms}</p>
                       {record.specialInstruction && (
-                        <p className="text-gray-700">
-                          <span className="font-semibold">Special Instructions:</span> {record.specialInstruction}
-                        </p>
+                        <div className="mt-4">
+                          <h3 className="font-medium text-gray-800 mb-2 flex items-center gap-2">
+                            <HelpCircle className="w-4 h-4 text-purple-500" />
+                            Special Instructions
+                          </h3>
+                          <p className="text-gray-600">{record.specialInstruction}</p>
+                        </div>
                       )}
                     </div>
+                    {/* Medicines */}
                     {record.medicines && record.medicines.length > 0 && (
-                      <div className="mb-4">
-                        <p className="font-semibold text-gray-700 mb-2">Medicines:</p>
-                        <ul className="list-disc list-inside text-sm text-gray-600">
+                      <div className="mt-4">
+                        <h3 className="font-medium text-gray-800 mb-2 flex items-center gap-2">
+                          <Activity className="w-4 h-4 text-blue-500" />
+                          Medicines
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {record.medicines.map((med: Medicine, idx: number) => (
-                            <li key={idx}>
-                              <span className="font-semibold">Name:</span> {med.name} |{" "}
-                              <span className="font-semibold">Consumption:</span> {med.consumption.join(", ")} |{" "}
-                              <span className="font-semibold">Duration:</span> {med.duration}
-                              {med.instruction && (
-                                <> | <span className="font-semibold">Instructions:</span> {med.instruction}</>
-                              )}
-                            </li>
+                            <div
+                              key={idx}
+                              className="p-3 bg-blue-50 rounded-lg hover:shadow-md transition-all duration-300"
+                            >
+                              <p className="font-medium text-blue-800">{med.name}</p>
+                              <div className="mt-2 space-y-1 text-sm">
+                                <p className="text-gray-600">
+                                  <span className="font-medium">Take:</span>{" "}
+                                  {med.consumption.join(", ")}
+                                </p>
+                                <p className="text-gray-600">
+                                  <span className="font-medium">Duration:</span>{" "}
+                                  {med.duration}
+                                </p>
+                                {med.instruction && (
+                                  <p className="text-gray-600">
+                                    <span className="font-medium">Instructions:</span>{" "}
+                                    {med.instruction}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
                           ))}
-                        </ul>
+                        </div>
                       </div>
                     )}
+                    {/* Tests */}
                     {record.tests && record.tests.length > 0 && (
-                      <div className="mb-4">
-                        <p className="font-semibold text-gray-700 mb-2">Tests:</p>
-                        <ul className="list-disc list-inside text-sm text-gray-600">
-                          {record.tests.map((tst: Test, idx: number) => (
-                            <li key={idx}>
-                              <span className="font-semibold">Test:</span> {tst.testName} |{" "}
-                              <span className="font-semibold">Instructions:</span> {tst.instruction}
-                            </li>
+                      <div className="mt-4">
+                        <h3 className="font-medium text-gray-800 mb-2 flex items-center gap-2">
+                          <Activity className="w-4 h-4 text-purple-500" />
+                          Tests
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {record.tests.map((test: Test, idx: number) => (
+                            <div
+                              key={idx}
+                              className="p-3 bg-purple-50 rounded-lg hover:shadow-md transition-all duration-300"
+                            >
+                              <p className="font-medium text-purple-800">
+                                {test.testName}
+                              </p>
+                              <p className="mt-1 text-sm text-gray-600">
+                                <span className="font-medium">Instructions:</span>{" "}
+                                {test.instruction}
+                              </p>
+                            </div>
                           ))}
-                        </ul>
+                        </div>
                       </div>
                     )}
+                    {/* Documents */}
                     {record.documents && record.documents.length > 0 && (
-                      <div className="mb-4">
-                        <p className="font-semibold text-gray-700 mb-2">Documents:</p>
+                      <div className="mt-4">
+                        <h3 className="font-medium text-gray-800 mb-2 flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-green-500" />
+                          Documents
+                        </h3>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                           {record.documents.map((doc: UploadedDoc, idx: number) => (
                             <div
                               key={idx}
-                              className="border rounded-lg overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
                               onClick={() => window.open(doc.url, "_blank")}
+                              className="cursor-pointer group relative"
                             >
                               {isImageFile(doc.name) ? (
-                                <img src={doc.url} alt={doc.name} className="object-cover h-32 w-full" />
+                                <img
+                                  src={doc.url}
+                                  alt={doc.name}
+                                  className="w-full h-32 object-cover rounded-lg group-hover:opacity-75 transition-opacity duration-300"
+                                />
                               ) : (
-                                <div className="flex flex-col items-center justify-center h-32 bg-gray-100">
-                                  <FaFileAlt className="text-3xl text-gray-500" />
-                                  <p className="text-xs text-gray-600 p-2 text-center">{doc.name}</p>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {record.prescriptions && record.prescriptions.length > 0 && (
-                      <div className="mb-4">
-                        <p className="font-semibold text-gray-700 mb-2">Prescriptions:</p>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          {record.prescriptions.map((pres: UploadedDoc, idx: number) => (
-                            <div
-                              key={idx}
-                              className="border rounded-lg overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
-                              onClick={() => window.open(pres.url, "_blank")}
-                            >
-                              {isImageFile(pres.name) ? (
-                                <img src={pres.url} alt={pres.name} className="object-cover h-32 w-full" />
-                              ) : (
-                                <div className="flex flex-col items-center justify-center h-32 bg-gray-100">
-                                  <FaFileAlt className="text-3xl text-gray-500" />
-                                  <p className="text-xs text-gray-600 p-2 text-center">{pres.name}</p>
+                                <div className="h-32 bg-gray-100 rounded-lg flex flex-col items-center justify-center p-4 group-hover:bg-gray-200 transition-colors duration-300">
+                                  <FileText className="w-8 h-8 text-gray-400 mb-2" />
+                                  <p className="text-xs text-gray-600 text-center truncate w-full">
+                                    {doc.name}
+                                  </p>
                                 </div>
                               )}
                             </div>
@@ -951,14 +1047,31 @@ const Dashboard = () => {
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-gray-600">No history available.</p>
-            )}
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">No history records found.</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
-      </div>
+      </main>
+
+      {/* ----- Tooltip ----- */}
+      {showTooltip && (
+        <div
+          className="fixed z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg transition-opacity duration-300"
+          style={{
+            left: `${tooltipPosition.x}px`,
+            top: `${tooltipPosition.y}px`,
+            transform: "translate(-50%, -100%)",
+          }}
+        >
+          {tooltipContent}
+        </div>
+      )}
     </div>
   );
 };
