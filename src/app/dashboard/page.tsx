@@ -8,6 +8,7 @@ import {
   Camera,
   Clock,
   FileText,
+  
   HelpCircle,
   Image,
   LogOut,
@@ -19,7 +20,9 @@ import {
   UserCheck,
   X,
   Menu,
+  BriefcaseMedical,
 } from "lucide-react";
+
 import { firebaseApp } from "../../firebaseconfig";
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 import { getDatabase, ref, push, get } from "firebase/database";
@@ -329,7 +332,7 @@ const Dashboard = () => {
               <Activity className="w-6 h-6 text-white" />
             </div>
             <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-              Infi Care
+              InfiCare
             </h1>
           </div>
           {/* Desktop Navigation */}
@@ -454,22 +457,23 @@ const Dashboard = () => {
               {userData ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-4">
-                    {Object.entries({
-                      Name: userData.name,
-                      Email: userData.email,
-                      Age: userData.age,
-                      Gender: userData.gender,
-                    }).map(
-                      ([key, value]) =>
-                        value && (
-                          <div key={key} className="flex items-center gap-2">
-                            <span className="text-gray-500 font-medium min-w-[100px]">
-                              {key}:
-                            </span>
-                            <span className="text-gray-800">{value}</span>
-                          </div>
-                        )
-                    )}
+                  {Object.entries({
+  Name: userData.name,
+  Email: userData.email,
+  Age: userData.age,
+  Gender: userData.gender,
+}).map(([key, value]) =>
+  value && (
+    <div key={key}>
+      <span className="text-gray-500 font-medium">
+        {/* Use two non-breaking spaces for precise spacing */}
+        {key}:&nbsp;&nbsp;{value}
+      </span>
+    </div>
+  )
+)}
+
+
                   </div>
                   <div className="space-y-4">
                     {Object.entries({
@@ -479,12 +483,12 @@ const Dashboard = () => {
                     }).map(
                       ([key, value]) =>
                         value && (
-                          <div key={key} className="flex items-center gap-2">
-                            <span className="text-gray-500 font-medium min-w-[100px]">
-                              {key}:
-                            </span>
-                            <span className="text-gray-800">{value}</span>
-                          </div>
+                          <div key={key} className="flex items-center">
+  <span className="text-gray-500 font-medium min-w-[100px]">
+    {key}:&nbsp;&nbsp;{value}
+  </span>
+</div>
+
                         )
                     )}
                   </div>
@@ -697,7 +701,7 @@ const Dashboard = () => {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                        <Activity className="w-4 h-4 text-blue-500" />
+                        <BriefcaseMedical className="w-4 h-4 text-blue-500" />
                         Medicines
                       </label>
                       <button
@@ -963,7 +967,7 @@ const Dashboard = () => {
                     {record.medicines && record.medicines.length > 0 && (
                       <div className="mt-4">
                         <h3 className="font-medium text-gray-800 mb-2 flex items-center gap-2">
-                          <Activity className="w-4 h-4 text-blue-500" />
+                          <BriefcaseMedical className="w-4 h-4 text-blue-500" />
                           Medicines
                         </h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

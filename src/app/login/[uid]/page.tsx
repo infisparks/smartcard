@@ -1,22 +1,36 @@
-'use client';
+"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { firebaseApp } from "../../../firebaseconfig";
-import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+} from "firebase/auth";
 import { getDatabase, ref, get } from "firebase/database";
 
 const PasswordLoginPage = () => {
   const router = useRouter();
   // Extract UID from the URL (e.g. /login/xAx0LTOsZOOPSMiSPEqCBn7YWhQ2)
   const { uid } = useParams();
-  
+
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  
+
   const auth = getAuth(firebaseApp);
   const database = getDatabase(firebaseApp);
+
+  // Redirect if user is already logged in
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        router.push("/dashboard");
+      }
+    });
+    return unsubscribe;
+  }, [auth, router]);
 
   // On mount, retrieve the user's email using the UID
   useEffect(() => {
@@ -56,10 +70,14 @@ const PasswordLoginPage = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-200 to-purple-200 p-6">
       <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
-        <h2 className="text-3xl font-bold text-center text-gray-800 mb-8">Password Login</h2>
+        <h2 className="text-3xl font-bold text-center text-gray-800 mb-8">
+          Password Login
+        </h2>
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Password</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Password
+            </label>
             <input
               type="password"
               placeholder="Enter your password"
