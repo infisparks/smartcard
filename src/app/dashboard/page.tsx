@@ -761,7 +761,7 @@ const Dashboard = () => {
                               Consumption Time
                             </label>
                             <div className="flex flex-wrap gap-4">
-                              {["morning", "afternoon", "evening", "night"].map(
+                              {["morning", "evening", "night"].map(
                                 (time) => (
                                   <label
                                     key={time}
