@@ -745,13 +745,15 @@ const Dashboard = () => {
                                 Duration
                               </label>
                               <input
-                                {...register(
-                                  `medicines.${index}.duration` as const,
-                                  { required: true }
-                                )}
-                                placeholder="e.g., 5 days"
-                                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
-                              />
+  type="number"
+  {...register(`medicines.${index}.duration` as const, {
+    required: true,
+    valueAsNumber: true,
+  })}
+  placeholder="e.g., 5"
+  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
+/>
+
                             </div>
                           </div>
                           <div className="mt-4 space-y-2">
