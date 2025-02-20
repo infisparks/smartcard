@@ -50,6 +50,7 @@ interface UploadedDoc {
 }
 
 interface PrescriptionData {
+  id?: string; // Added optional id field
   professional: string;
   doctorName?: string;
   hospital?: string;
@@ -95,7 +96,6 @@ const Dashboard = () => {
     watch,
     control,
     reset,
-    
   } = useForm({
     defaultValues: {
       professional: "",
@@ -219,12 +219,15 @@ const Dashboard = () => {
       });
       const newDocs = await Promise.all(uploadPromises);
       setUploadedDocs((prev) => [...prev, ...newDocs]);
-      showTooltipMessage("Files uploaded successfully!", event);
+      showTooltipMessage(
+        "Files uploaded successfully!",
+        event as React.SyntheticEvent
+      );
     } catch (error: any) {
       console.error("Upload error:", error);
       showTooltipMessage(
         "Error uploading files. Please try again.",
-        event
+        event as React.SyntheticEvent
       );
     } finally {
       setLoading(false);
@@ -243,12 +246,15 @@ const Dashboard = () => {
       const docRef = storageRef(storage, `documents/${doc.name}`);
       await deleteObject(docRef);
       setUploadedDocs((prev) => prev.filter((_, i) => i !== index));
-      showTooltipMessage("Document removed successfully!", event);
+      showTooltipMessage(
+        "Document removed successfully!",
+        event as React.SyntheticEvent
+      );
     } catch (error) {
       console.error("Delete error:", error);
       showTooltipMessage(
         "Error removing document. Please try again.",
-        event
+        event as React.SyntheticEvent
       );
     }
   };
@@ -262,7 +268,7 @@ const Dashboard = () => {
     if (!currentUser) {
       showTooltipMessage(
         "User not logged in",
-        { currentTarget: document.body } as React.SyntheticEvent
+        { currentTarget: document.body } as unknown as React.SyntheticEvent
       );
       setLoading(false);
       return;
@@ -279,7 +285,7 @@ const Dashboard = () => {
       await push(ref(db, `users/${uid}/detail`), prescriptionData);
       showTooltipMessage(
         "Prescription saved successfully!",
-        { currentTarget: document.body } as React.SyntheticEvent
+        { currentTarget: document.body } as unknown as React.SyntheticEvent
       );
       reset();
       setUploadedDocs([]);
@@ -287,7 +293,7 @@ const Dashboard = () => {
       console.error("Submit error:", error);
       showTooltipMessage(
         "Error saving prescription. Please try again.",
-        { currentTarget: document.body } as React.SyntheticEvent
+        { currentTarget: document.body } as unknown as React.SyntheticEvent
       );
     } finally {
       setLoading(false);
